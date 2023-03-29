@@ -256,3 +256,31 @@ def test_build__no_task_include_raise_error():
         _, _ = task_group_builder.build(dag, create_empty_start_end_task=True)
         exception_msg = info.value.args[0]
         assert exception_msg == 'No task in this task group builder.'
+
+
+@pytest.fixture
+def task_group_builder():
+    return TaskGroupBuilder(group_id="example_group")
+
+
+@pytest.fixture
+def task_group_builder_empty_group_id():
+    return TaskGroupBuilder(group_id="")
+
+
+def test_generate_task_id(task_group_builder, task_group_builder_empty_group_id):
+    # Test case without providing a connector
+    generated_name = task_group_builder.generate_task_id("task_id")
+    assert generated_name == "example_group_task_id"
+
+    # Test case with a custom connector
+    generated_name = task_group_builder.generate_task_id("task_id", connector="-")
+    assert generated_name == "example_group-task_id"
+
+    # Test case with an empty connector
+    generated_name = task_group_builder.generate_task_id("task_id", connector="")
+    assert generated_name == "example_grouptask_id"
+
+    # Test case with an empty group_id
+    generated_name = task_group_builder_empty_group_id.generate_task_id("task_id")
+    assert generated_name == "task_id"

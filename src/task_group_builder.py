@@ -99,6 +99,13 @@ class TaskGroupBuilder:
             end << _end
         return start, end
 
+    def generate_task_id(self, task_id, connector='_'):
+        builder = []
+        if self.task_group_id:
+            builder.append(self.task_group_id)
+        builder.append(task_id)
+        return connector.join(builder)
+
 
 class TaskGroupBuilderException(Exception):
     ...
