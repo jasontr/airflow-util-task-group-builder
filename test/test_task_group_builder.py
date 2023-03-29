@@ -284,3 +284,67 @@ def test_generate_task_id(task_group_builder, task_group_builder_empty_group_id)
     # Test case with an empty group_id
     generated_name = task_group_builder_empty_group_id.generate_task_id("task_id")
     assert generated_name == "task_id"
+
+
+@pytest.fixture(scope="function")
+def example_dag():
+    return DAG(
+        dag_id="example_dag",
+        default_args={"owner": "airflow", "retries": 0},
+        start_date=datetime(2023, 1, 1),
+        end_date=datetime(2023, 1, 2),
+        catchup=False,
+    )
+
+
+def test_build_task_sequence(example_dag):
+    task_group_builder = TaskGroupBuilder("test_group")
+
+    @task_builder
+    def task_1(dag):
+        return EmptyOperator(task_id="task_1", dag=dag)
+
+    @task_builder
+    def task_2(dag):
+        return EmptyOperator(task_id="task_2", dag=dag)
+
+    task_group_builder.ordered_task_builders = [task_1, task_2]
+
+    built_task_pairs = filter(
+        lambda pair: pair[0] is not None,
+        map(lambda tb: task_group_builder._build_task_builder(tb, example_dag), task_group_builder.ordered_task_builders),
+    )
+
+    start, end = task_group_builder._build_task_sequence(built_task_pairs, example_dag)
+
+    assert start.task_id == "task_1"
+    assert end.task_id == "task_2"
+
+
+@pytest.mark.parametrize("use_task_group", [True, False])
+def test_as_task_builder(example_dag, use_task_group):
+    task_group_builder = TaskGroupBuilder("test_group")
+
+    @task_builder
+    def task_1(dag):
+        return EmptyOperator(task_id="task_1", dag=dag)
+
+    @task_builder
+    def task_2(dag):
+        return EmptyOperator(task_id="task_2", dag=dag)
+
+    task_group_builder.ordered_task_builders = [task_1, task_2]
+
+    task_builder_func = task_group_builder.as_task_builder(use_task_group=use_task_group)
+    start, end = task_builder_func(example_dag)
+
+    if use_task_group:
+        assert start.task_id == "test_group.task_1"
+        assert end.task_id == "test_group.task_2"
+        assert start.task_group.group_id == "test_group"
+        assert end.task_group.group_id == "test_group"
+    else:
+        assert start.task_id == "task_1"
+        assert end.task_id == "task_2"
+        assert start.task_group.group_id is None
+        assert end.task_group.group_id is None

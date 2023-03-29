@@ -56,28 +56,36 @@ class TaskGroupBuilder:
         end = list(TaskGroupBuilder._flatten(end))
         return start or None, end or None
 
-    def as_task_builder(self) -> TaskBuilder:
+    def as_task_builder(self, use_task_group: bool = True) -> TaskBuilder:
         def builder(dag: DAG) -> Tuple[TaskAtStart, TaskAtEnd]:
             task_start_end_pair_builder = partial(self._build_task_builder, dag=dag)
             built_task_pairs = filter(lambda pair: pair[0] is not None,
                                       map(task_start_end_pair_builder, self.ordered_task_builders))
-            with TaskGroup(group_id=self.task_group_id, dag=dag, prefix_group_id=True):
-                try:
-                    start, current_end = next(built_task_pairs)
-                except StopIteration:
-                    return None, None
-
-                for next_start, next_end in built_task_pairs:
-                    if self._both_sequence(current_end, next_start):
-                        connector = EmptyOperator(task_id=self.connector_name(next_start), dag=dag)
-                        current_end >> connector >> next_start
-                    else:
-                        current_end >> next_start
-                    current_end = next_end
+            if use_task_group and self.task_group_id:
+                with TaskGroup(group_id=self.task_group_id, dag=dag, prefix_group_id=True):
+                    start, current_end = self._build_task_sequence(built_task_pairs, dag)
+            else:
+                start, current_end = self._build_task_sequence(built_task_pairs, dag)
             assert (not start) ^ (not current_end) is False
             return start, current_end
 
         return builder
+
+    def _build_task_sequence(self, built_task_pairs, dag):
+        try:
+            start, current_end = next(built_task_pairs)
+        except StopIteration:
+            return None, None
+
+        for next_start, next_end in built_task_pairs:
+            if self._both_sequence(current_end, next_start):
+                connector = EmptyOperator(task_id=self.connector_name(next_start), dag=dag)
+                current_end >> connector >> next_start
+            else:
+                current_end >> next_start
+            current_end = next_end
+
+        return start, current_end
 
     def connector_name(self, tasks: Sequence[TaskAtStart]):
         first_task_id = sorted(task.task_id for task in tasks)[0]
@@ -88,7 +96,7 @@ class TaskGroupBuilder:
         return isinstance(one, Sequence) and isinstance(another, Sequence)
 
     def build(self, dag: DAG, create_empty_start_end_task=False) -> Tuple[TasksAtStart, TasksAtEnd]:
-        start, end = self.as_task_builder()(dag)
+        start, end = self.as_task_builder(use_task_group=False)(dag)
         if start is None or end is None:
             raise TaskGroupBuilderException('No task in this task group builder.')
         if create_empty_start_end_task:
